@@ -1,0 +1,141 @@
+<!-- templates/admin.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Админ-панель LLM Ассистента</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.6; background-color: #f8f9fa; color: #343a40; }
+        h1, h2 { color: #0056b3; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; margin-bottom: 20px; }
+        button {
+            padding: 10px 18px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:active { transform: translateY(1px); }
+        button.primary { background-color: #007bff; color: white; }
+        button.primary:hover { background-color: #0056b3; }
+        button.danger { background-color: #dc3545; color: white; }
+        button.danger:hover { background-color: #c82333; }
+        .status {
+            margin-top: 20px;
+            padding: 12px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: none; /* Скрыто по умолчанию */
+        }
+        .status.show { display: block; }
+        .status.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .section { margin-bottom: 30px; padding: 20px; border: 1px solid #e9ecef; border-radius: 8px; background-color: #ffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .section h3 { margin-top: 0; color: #495057; }
+        pre { background-color: #e9ecef; padding: 10px; border-radius: 5px; overflow-x: auto; font-family: 'Courier New', Courier, monospace; font-size: 0.9em; }
+        .info-item { margin-bottom: 8px; }
+        .info-item strong { color: #007bff; }
+    </style>
+</head>
+<body>
+    <h1>Админ-панель LLM Ассистента</h1>
+
+    <div class="section">
+        <h2>Инжест данных</h2>
+        <p>Нажмите кнопку, чтобы загрузить данные из <code>data/test_data.csv</code> и добавить их в векторное хранилище. Существующие данные будут удалены перед инжестом.</p>
+        <button class="primary" onclick="ingestData()">Загрузить и Инжестировать данные</button>
+        <button class="danger" onclick="resetIndex()">Очистить индекс</button>
+        <div id="ingest-status" class="status"></div>
+    </div>
+
+    <div class="section">
+        <h2>Статистика индекса</h2>
+        <p>Нажмите кнопку, чтобы получить текущую статистику векторного хранилища.</p>
+        <button class="primary" onclick="getIndexStats()">Обновить статистику</button>
+        <div id="index-stats" class="status"></div>
+    </div>
+
+
+
+    <script>
+        // Вспомогательная функция для вызова API
+        async function callApi(endpoint, method = 'GET', body = null) {
+            const options = { method, headers: { 'Content-Type': 'application/json' } };
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+            const response = await fetch(endpoint, options);
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP Error: ${response.status} ${response.statusText}`);
+            }
+            return data;
+        }
+
+        // Функция для отображения статуса
+        function showStatus(elementId, message, type) {
+            const statusDiv = document.getElementById(elementId);
+            statusDiv.className = `status show ${type}`;
+            statusDiv.innerHTML = message;
+        }
+
+        // Обработчик кнопки "Загрузить и Инжестировать данные"
+        async function ingestData() {
+            showStatus('ingest-status', 'Начинаю инжест данных...', '');
+            try {
+                const data = await callApi('/api/ingest', 'POST');
+                showStatus('ingest-status', `✅ Успешно инжестировано ${data.rows} строк.`, 'success');
+                getIndexStats(); // Обновить статистику после инжеста
+            } catch (error) {
+                showStatus('ingest-status', `❌ Ошибка инжеста: ${error.message}`, 'error');
+                console.error('Ошибка инжеста:', error);
+            }
+        }
+
+        // Обработчик кнопки "Очистить индекс"
+        async function resetIndex() {
+            if (!confirm('Вы уверены, что хотите полностью очистить индекс? Это действие необратимо.')) {
+                return;
+            }
+            showStatus('ingest-status', 'Очищаю индекс...', '');
+            try {
+                const data = await callApi('/api/reset_index', 'POST');
+                showStatus('ingest-status', `✅ Индекс успешно очищен.`, 'success');
+                getIndexStats(); // Обновить статистику после очистки
+            } catch (error) {
+                showStatus('ingest-status', `❌ Ошибка очистки индекса: ${error.message}`, 'error');
+                console.error('Ошибка очистки индекса:', error);
+            }
+        }
+
+        // Обработчик кнопки "Обновить статистику"
+        async function getIndexStats() {
+            const statsDiv = document.getElementById('index-stats');
+            statsDiv.className = 'status';
+            statsDiv.textContent = 'Загружаю статистику индекса...';
+            try {
+                const data = await callApi('/api/index_stats', 'GET');
+                if (data.error) {
+                    showStatus('index-stats', `❌ Ошибка получения статистики: ${data.error}`, 'error');
+                    return;
+                }
+                showStatus('index-stats', `
+                    <h3>Статистика векторного хранилища:</h3>
+                    <div class="info-item"><strong>Количество чанков:</strong> ${data.count}</div>
+                    <div class="info-item"><strong>Имя коллекции:</strong> ${data.collection_name}</div>
+                    <div class="info-item"><strong>Модель эмбеддингов:</strong> ${data.embedding_model}</div>
+                    <div class="info-item"><strong>Путь к БД:</strong> ${data.db_path}</div>
+                `, 'success');
+            } catch (error) {
+                showStatus('index-stats', `❌ Ошибка получения статистики: ${error.message}`, 'error');
+                console.error('Ошибка получения статистики:', error);
+            }
+        }
+
+        // Загрузить статистику при загрузке страницы
+        document.addEventListener('DOMContentLoaded', getIndexStats);
+    </script>
+</body>
+</html>

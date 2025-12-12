@@ -1,0 +1,144 @@
+<!-- templates/chat.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>LLM Ассистент по данным Demand</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.6; background-color: #f8f9fa; color: #343a40; }
+        h1 { color: #0056b3; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; }
+        #messages {
+            border: 1px solid #e9ecef;
+            height: 400px;
+            overflow-y: auto; /* Изменено на auto для лучшего UX */
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            display: flex; /* Для прокрутки вниз */
+            flex-direction: column; /* Для прокрутки вниз */
+        }
+        .msg { margin-bottom: 15px; padding: 10px 15px; border-radius: 15px; max-width: 75%; word-wrap: break-word; }
+        .user { background-color: #e0f7fa; color: #007bff; align-self: flex-end; /* Сообщения пользователя справа */ }
+        .bot { background-color: #e8f5e9; color: #28a745; align-self: flex-start; /* Сообщения бота слева */ }
+        .sources { font-size: 0.8em; color: #6c757d; margin-top: 8px; border-top: 1px dashed #ced4da; padding-top: 8px; }
+        #input-area { display: flex; margin-top: 10px; }
+        #query {
+            flex-grow: 1;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            margin-right: 10px;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.075);
+        }
+        button {
+            padding: 12px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:hover { background-color: #0056b3; }
+        button:active { transform: translateY(1px); }
+        .loading-indicator { font-style: italic; color: #6c757d; }
+        .error-message { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>LLM Ассистент по данным Demand</h1>
+    <div id="messages">
+        <div class="msg bot">Добро пожаловать! Я готов ответить на ваши вопросы по данным о спросе. Задайте мне вопрос.</div>
+    </div>
+    <div id="input-area">
+        <input type="text" id="query" placeholder="Введите ваш вопрос..." />
+        <button onclick="ask()">Отправить</button>
+    </div>
+
+    <script>
+        const messagesContainer = document.getElementById("messages");
+        const queryInput = document.getElementById("query");
+        const sendButton = document.getElementById("send-button");
+
+        // Функция для добавления сообщения в чат
+        function addMessage(sender, text, sources = []) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('msg', sender);
+
+            let content = `<b>${sender === 'user' ? 'Вы' : 'Ассистент'}:</b> ${text}`;
+
+            if (sender === 'bot' && sources.length > 0) {
+                content += `<div class="sources">Источники: ${sources.join(', ')}</div>`;
+            }
+
+            msgDiv.innerHTML = content;
+            messagesContainer.appendChild(msgDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight; // Автоматическая прокрутка вниз
+        }
+
+        // Основная функция отправки вопроса
+        async function ask() {
+            const question = queryInput.value.trim();
+            if (!question) return;
+
+            addMessage('user', question); // Добавляем вопрос пользователя
+            queryInput.value = ''; // Очищаем поле ввода
+
+            // Добавляем индикатор загрузки
+            const loadingMsgDiv = document.createElement('div');
+            loadingMsgDiv.classList.add('msg', 'bot', 'loading-indicator');
+            loadingMsgDiv.id = 'loading-indicator';
+            loadingMsgDiv.innerHTML = '<b>Ассистент:</b> <span style="font-style: italic;">Думаю...</span>';
+            messagesContainer.appendChild(loadingMsgDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            try {
+                const response = await fetch("/api/ask", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: question })
+                });
+
+                // Обработка HTTP-ошибок
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP Error: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const llmAnswer = data.answer || 'Извините, не удалось получить ответ.';
+                const sources = data.sources || [];
+
+                // Удаляем индикатор загрузки
+                const existingLoading = document.getElementById('loading-indicator');
+                if (existingLoading) {
+                    existingLoading.remove();
+                }
+
+                addMessage('bot', llmAnswer, sources); // Добавляем ответ LLM с источниками
+
+            } catch (err) {
+                // Удаляем индикатор загрузки
+                const existingLoading = document.getElementById('loading-indicator');
+                if (existingLoading) {
+                    existingLoading.remove();
+                }
+                console.error("Ошибка при запросе к API:", err);
+                addMessage('bot', `<span class="error-message">Произошла ошибка: ${err.message || err}. Пожалуйста, попробуйте еще раз или проверьте логи сервера.</span>`);
+            }
+        }
+
+        // Обработчик события нажатия Enter в поле ввода
+        queryInput.addEventListener("keypress", e => {
+            if (e.key === "Enter") {
+                ask();
+            }
+        });
+    </script>
+</body>
+</html>
